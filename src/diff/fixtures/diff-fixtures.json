@@ -1,0 +1,424 @@
+{
+  "schema": "qspline.diff-fixture.v2",
+  "version": "2.0.0",
+  "geometry": {
+    "lineHeight": 20,
+    "prefixWidth": 12,
+    "gutterWidth": 40,
+    "minCodeAreaUnified": 280,
+    "minCodeAreaSxs": 220,
+    "hunkBarHeight": 22
+  },
+  "fixtures": [
+    {
+      "id": "unified-hunk",
+      "layout": "unified",
+      "path": "src/graph/spline.rs",
+      "language": "rust",
+      "lines": [
+        {
+          "kind": "hunk",
+          "header": "@@ -118,7 +118,9 @@ fn paint_lane"
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "118",
+          "newNo": "118",
+          "text": "    let mid = (y0 + y1) * 0.5;"
+        },
+        {
+          "kind": "del",
+          "oldNo": "119",
+          "newNo": "",
+          "text": "    path.line_to(x1, y1);",
+          "intra": [
+            9,
+            16
+          ]
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "119",
+          "text": "    path.cubic_to(x0, mid, x1, mid, x1, y1);",
+          "intra": [
+            9,
+            17
+          ]
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "120",
+          "newNo": "120",
+          "text": "    path.stroke();"
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "121",
+          "text": "    if lit { path.set_width(2.5); }"
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "121",
+          "newNo": "122",
+          "text": "    Ok(())"
+        }
+      ]
+    },
+    {
+      "id": "partial-line-range",
+      "layout": "unified",
+      "path": "src/graph/spline.rs",
+      "selectedLines": [
+        2,
+        3
+      ],
+      "note": "Selection spans one deleted line and one added line. Stage / Unstage / Discard remain visible in the hunk bar and as a keyboard-focusable strip.",
+      "lines": [
+        {
+          "kind": "hunk",
+          "header": "@@ -118,7 +118,9 @@ fn paint_lane"
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "118",
+          "newNo": "118",
+          "text": "    let mid = (y0 + y1) * 0.5;"
+        },
+        {
+          "kind": "del",
+          "oldNo": "119",
+          "newNo": "",
+          "text": "    path.line_to(x1, y1);",
+          "selected": true
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "119",
+          "text": "    path.cubic_to(x0, mid, x1, mid, x1, y1);",
+          "selected": true
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "120",
+          "newNo": "120",
+          "text": "    path.stroke();"
+        }
+      ]
+    },
+    {
+      "id": "partially-staged-file",
+      "layout": "unified",
+      "path": "src/graph/spline.rs",
+      "fileState": "partial",
+      "lines": [
+        {
+          "kind": "hunk",
+          "header": "@@ -10,4 +10,5 @@ mod lane"
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "10",
+          "newNo": "10",
+          "text": " pub mod spline;"
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "11",
+          "text": " pub mod paint;",
+          "staged": true
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "12",
+          "text": " pub mod hit;",
+          "staged": false
+        }
+      ]
+    },
+    {
+      "id": "nonewline",
+      "layout": "unified",
+      "path": "NOTICE",
+      "lines": [
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "1",
+          "text": "QSpline"
+        },
+        {
+          "kind": "nonewline",
+          "text": "No newline at end of file"
+        }
+      ]
+    },
+    {
+      "id": "binary",
+      "layout": "unified",
+      "path": "assets/icon.png",
+      "kind": "binary",
+      "message": "Binary file. 12 KB. Open externally, or use image diff when both sides are images."
+    },
+    {
+      "id": "image",
+      "layout": "image-sxs",
+      "path": "docs/graph-hero.png",
+      "kind": "image",
+      "message": "P1 image diff. Side-by-side default. Swipe and onion-skin are settings, not chrome on the first paint."
+    },
+    {
+      "id": "submodule",
+      "layout": "unified",
+      "path": "vendor/qt-bridges",
+      "kind": "submodule",
+      "lines": [
+        {
+          "kind": "del",
+          "oldNo": "1",
+          "newNo": "",
+          "text": "Subproject commit 9e8b11c4d2aa77ab"
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "1",
+          "text": "Subproject commit a1c3f29e8b11c4d2"
+        }
+      ]
+    },
+    {
+      "id": "mode-change",
+      "layout": "unified",
+      "path": "scripts/verify.sh",
+      "kind": "mode",
+      "message": "Mode change 100644 \u2192 100755. No content hunk."
+    },
+    {
+      "id": "rename",
+      "layout": "unified",
+      "path": "src/graph/paint.rs",
+      "kind": "rename",
+      "from": "src/graph/draw.rs",
+      "similarity": 92,
+      "message": "Renamed from src/graph/draw.rs (92%). Content hunks follow when bytes also changed."
+    },
+    {
+      "id": "deleted-file",
+      "layout": "unified",
+      "path": "src/legacy.rs",
+      "kind": "deleted",
+      "lines": [
+        {
+          "kind": "del",
+          "oldNo": "1",
+          "newNo": "",
+          "text": "mod legacy;"
+        }
+      ]
+    },
+    {
+      "id": "huge-file",
+      "layout": "unified",
+      "path": "generated/graph-dump.txt",
+      "kind": "huge",
+      "message": "Diff omitted. 1.2 MB, 48k lines. Show first 400 lines, or open externally."
+    },
+    {
+      "id": "syntax-unavailable",
+      "layout": "unified",
+      "path": "packaging/qspline.desktop.in",
+      "language": null,
+      "note": "No highlighter. Text still uses --fg on add/del fills."
+    },
+    {
+      "id": "conflict-markers",
+      "layout": "unified",
+      "path": "src/graph/spline.rs",
+      "kind": "conflict",
+      "lines": [
+        {
+          "kind": "conflict-begin",
+          "label": "main",
+          "text": "<<<<<<< main"
+        },
+        {
+          "kind": "del",
+          "oldNo": "119",
+          "newNo": "",
+          "text": "    path.line_to(x1, y1);"
+        },
+        {
+          "kind": "conflict-sep",
+          "text": "======="
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "119",
+          "text": "    path.cubic_to(x0, mid, x1, mid, x1, y1);"
+        },
+        {
+          "kind": "conflict-end",
+          "label": "feature/graph",
+          "text": ">>>>>>> feature/graph"
+        }
+      ]
+    },
+    {
+      "id": "untracked",
+      "layout": "unified",
+      "path": "src/graph/hit.rs",
+      "kind": "untracked",
+      "note": "P1: untracked files can show a virtual add-only diff for partial staging. v1 may stage the whole file. The control is the same Stage hunk / Stage lines strip."
+    },
+    {
+      "id": "side-by-side-geometry",
+      "layout": "side-by-side",
+      "path": "src/graph/spline.rs",
+      "language": "rust",
+      "lines": [
+        {
+          "kind": "ctx",
+          "oldNo": "118",
+          "newNo": "118",
+          "text": "    let mid = (y0 + y1) * 0.5;"
+        },
+        {
+          "kind": "del",
+          "oldNo": "119",
+          "newNo": "",
+          "text": "    path.line_to(x1, y1);",
+          "intra": [
+            9,
+            16
+          ]
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "119",
+          "text": "    path.cubic_to(x0, mid, x1, mid, x1, y1);",
+          "intra": [
+            9,
+            17
+          ]
+        }
+      ],
+      "geometry": {
+        "oldGutter": 40,
+        "newGutter": 40,
+        "prefix": 12,
+        "minCodeArea": 220,
+        "gutterDivider": 1
+      },
+      "note": "Both gutters always render; empty cell pairs stay aligned per row pair. Add rows carry addBg in the new column only; alignment filler uses surface2."
+    },
+    {
+      "id": "wrap-mode",
+      "layout": "unified",
+      "path": "docs/notes.md",
+      "wrap": {
+        "enabled": true,
+        "continuationIndentPx": 52
+      },
+      "lines": [
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "7",
+          "text": "The spline renderer keeps a per-lane cubic segment cache so that scrolling a 100k-commit history stays flat at 120 fps with sixteen live lanes."
+        }
+      ],
+      "note": "Wrapped continuation lines indent to 52px (gutter 40 + prefix 12); the row keeps one semantic line index; intra-line spans may wrap across visual lines."
+    },
+    {
+      "id": "find-in-diff",
+      "layout": "unified",
+      "path": "src/graph/spline.rs",
+      "language": "rust",
+      "find": {
+        "query": "cubic",
+        "caseSensitive": false,
+        "matches": [
+          {
+            "lineIndex": 2,
+            "col": 10,
+            "length": 5
+          },
+          {
+            "lineIndex": 3,
+            "col": 10,
+            "length": 5
+          }
+        ],
+        "current": 1,
+        "wrapAround": true
+      },
+      "lines": [
+        {
+          "kind": "hunk",
+          "header": "@@ -118,7 +118,9 @@ fn paint_lane"
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "118",
+          "newNo": "118",
+          "text": "    let mid = (y0 + y1) * 0.5;"
+        },
+        {
+          "kind": "del",
+          "oldNo": "119",
+          "newNo": "",
+          "text": "    path.line_to(x1, y1);"
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "119",
+          "text": "    path.cubic_to(x0, mid, x1, mid, x1, y1);"
+        },
+        {
+          "kind": "add",
+          "oldNo": "",
+          "newNo": "120",
+          "text": "    path.cubic_to(x1, mid, x0, mid, x0, y0);"
+        },
+        {
+          "kind": "ctx",
+          "oldNo": "120",
+          "newNo": "121",
+          "text": "    path.stroke();"
+        }
+      ],
+      "note": "Find bar shows 2/2 with prev/next; the current match uses sel fill, other matches use hover fill; Enter wraps around."
+    },
+    {
+      "id": "decode-error",
+      "layout": "unified",
+      "path": "src/legacy/shift_jis.txt",
+      "kind": "decode-error",
+      "message": "This file is not valid UTF-8. Decode with an external tool or configure an encoding in Settings."
+    }
+  ],
+  "deltasFromV1": [
+    "Adds side-by-side geometry, intra-line span rule, wrap mode, find-in-diff, decode-error fixtures.",
+    "Intensities bound to tokens v2: row addBg/delBg, selected addBgS/delBgS, intra-line addBgI/delBgI.",
+    "The retired package must not be restored wholesale; this file is a refresh-aligned replacement on the same row schema."
+  ],
+  "intraLineRule": {
+    "derivation": "For a del/add pair, compute the common prefix and suffix at word granularity (split on whitespace and punctuation); the differing middle range is the span.",
+    "minSpanChars": 2,
+    "trim": "Spans snap to token boundaries; sub-token spans merge into the enclosing token.",
+    "colors": {
+      "del": "delBgI",
+      "add": "addBgI"
+    },
+    "maxSpansPerLine": 6,
+    "note": "Spans are precomputed by Rust and shipped in the projection; QML only paints [start,end)."
+  }
+}
