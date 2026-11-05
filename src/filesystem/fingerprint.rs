@@ -176,6 +176,14 @@ mod tests {
         assert!(matches!(preview, PathFingerprint::DeferredFile(_)));
         assert!(fingerprint_matches(&path, &preview).unwrap());
         fs::write(&path, b"after!").unwrap();
+        // Coarse write clocks (Windows) can stamp both writes alike; date the
+        // rewrite later, as a real later edit would be.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(2))
+            .unwrap();
         assert_ne!(fingerprint_path(&path).unwrap(), before);
         assert!(!fingerprint_matches(&path, &preview).unwrap());
         fs::remove_dir_all(root).unwrap();
