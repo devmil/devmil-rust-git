@@ -222,6 +222,54 @@ pub fn unmerged_index(
     crate::diff::index::parse_unmerged_index(&bytes).map_err(|_| ProbeFailure::InvalidOutput)
 }
 
+/// Lists the paths `commit` changes against its first parent (the empty tree for a root
+/// commit) with `git diff-tree -r -z --name-only --no-renames --root --no-commit-id
+/// --diff-merges=first-parent <commit>`.
+///
+/// Renames are reported as their deleted source and added destination, so the result names
+/// every path the change writes. Paths are Git's raw bytes in Git's order.
+///
+/// # Errors
+/// Reports launch, cancellation, truncated/malformed output and Git failures.
+pub fn changed_paths(
+    executable: &OsStr,
+    worktree: &Path,
+    commit: &ObjectId,
+    executor: &mut dyn CommandExecutor,
+) -> Result<Vec<DiffPath>, ProbeFailure> {
+    let bytes = successful_output(executor.execute(probe_command(
+        executable,
+        worktree,
+        &[
+            "diff-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            "--no-renames",
+            "--root",
+            "--no-commit-id",
+            "--diff-merges=first-parent",
+            commit.as_str(),
+        ],
+        LIST_PROBE_OUTPUT_BYTES,
+    )))?;
+    parse_name_list(&bytes)
+}
+
+/// Parses a NUL-terminated path list such as `git diff-tree -z --name-only` prints.
+///
+/// # Errors
+/// Returns [`ProbeFailure::InvalidOutput`] for a path Git would not print.
+pub fn parse_name_list(bytes: &[u8]) -> Result<Vec<DiffPath>, ProbeFailure> {
+    bytes
+        .split(|byte| *byte == 0)
+        .filter(|record| !record.is_empty())
+        .map(|record| {
+            DiffPath::from_bytes(record.to_vec()).map_err(|_| ProbeFailure::InvalidOutput)
+        })
+        .collect()
+}
+
 /// Unmerged paths with their base (1), ours (2) and theirs (3) stage entries.
 pub type UnmergedIndex =
     std::collections::BTreeMap<DiffPath, [Option<crate::diff::index::IndexStage>; 3]>;

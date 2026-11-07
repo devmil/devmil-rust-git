@@ -107,8 +107,8 @@ protected. The caller owns confirmation, execution, reconciliation and UI feedba
 | `repository` | Repository discovery through a consumer-supplied recorded-command callback |
 | `diff` | Raw, unified and combined diffs, numstat, index stages, selection models and partial patch construction |
 | `history` | Graph records, cat-file framing, commit metadata, blame, reflog, tree and history formats |
-| `commands`, `merge` | Typed branch/tag/remote/stash requests, patch export arguments, native command arguments and sequencer state; `GitInvocation` builders for commit, stage/unstage, restore/clean/apply, worktree add, submodule, LFS, bisect, conflict index entries and `RefTransaction` (`update-ref --stdin -z`); `merge::markers` conflict-marker parsing |
-| `probes` | Canonical read-only probes: `resolve`, `is_ancestor`, `unmerged_paths`, `has_changes`, `is_published`, `published_commits` |
+| `commands`, `merge` | Typed branch/tag/remote/stash requests, patch export arguments, native command arguments and sequencer state; `merge::local_changes` (which local changes block an in-place revert or cherry-pick); `GitInvocation` builders for commit, stage/unstage, restore/clean/apply, worktree add, submodule, LFS, bisect, conflict index entries and `RefTransaction` (`update-ref --stdin -z`); `merge::markers` conflict-marker parsing |
+| `probes` | Canonical read-only probes: `resolve`, `is_ancestor`, `unmerged_paths`, `changed_paths`, `has_changes`, `is_published`, `published_commits` |
 | `index_transaction` | Staging on a private index copy and installation under `index.lock` |
 | `native_bytes` | Lossless native path to Git bytes conversion (Unix raw bytes, Windows WTF-8) |
 | `rebase`, `sequence_editor` | Todo grammar, edits, autosquash validation, sequencer files and editor mechanics |

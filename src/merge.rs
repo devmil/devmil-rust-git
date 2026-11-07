@@ -2,6 +2,7 @@
 
 use crate::diff::model::DiffPath;
 
+pub mod local_changes;
 pub mod markers;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
