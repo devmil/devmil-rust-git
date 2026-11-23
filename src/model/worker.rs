@@ -34,6 +34,8 @@ pub(super) fn run(path: &std::path::Path, shared: &Arc<Shared>) {
     let mut block_reads_until_refresh = false;
     let started = Instant::now();
     let mut cache = reads::ReadCache::default();
+    // What the history boundaries (shallow, grafts, replace refs) looked like at the last scan.
+    let mut boundaries: Option<Vec<Option<(u64, std::time::SystemTime)>>> = None;
     loop {
         if shared.cancel.load(Ordering::Acquire) {
             break;
@@ -113,8 +115,17 @@ pub(super) fn run(path: &std::path::Path, shared: &Arc<Shared>) {
                     .watch_error
                     .clone_from(&lock(&shared.state).snapshot.watch_error);
                 // Reads completed during the scan must not survive its new repository state.
-                cache.invalidate(refreshed_full);
-                if refreshed_full {
+                // A full scan that found the references and HEAD as they were (the rescan that
+                // closes a watch-registration gap, usually) keeps the immutable reads: topology,
+                // commit details and metadata only change with what the references name.
+                let next_boundaries = snapshot.repository.as_ref().map(boundary_fingerprint);
+                let invalidate_all = refreshed_full
+                    && (!same_references(&lock(&shared.state).snapshot, &snapshot)
+                        || next_boundaries.is_none()
+                        || boundaries != next_boundaries);
+                boundaries = next_boundaries;
+                cache.invalidate(invalidate_all);
+                if invalidate_all {
                     super::graph_pages::invalidate_indices(shared);
                 }
                 if !shared.cancel.load(Ordering::Acquire) {
@@ -613,6 +624,33 @@ fn refresh_snapshot(
         RepositoryPhase::Ready
     };
     snapshot
+}
+
+/// Whether `next` names the same references and HEAD as `previous`, so history and other
+/// reads keyed by what the references name stay valid.
+fn same_references(previous: &RepositorySnapshot, next: &RepositorySnapshot) -> bool {
+    previous.refs_failure.is_none()
+        && next.refs_failure.is_none()
+        && previous.refs == next.refs
+        && previous.status.as_ref().map(|status| &status.branch.head)
+            == next.status.as_ref().map(|status| &status.branch.head)
+        && previous.status.is_some()
+}
+
+/// Size and modification time of the files that change history boundaries without moving a
+/// reference: `shallow`, `info/grafts`, `refs/replace` and `packed-refs`.
+fn boundary_fingerprint(
+    repository: &DiscoveredRepository,
+) -> Vec<Option<(u64, std::time::SystemTime)>> {
+    let common = repository.worktree.repository().common_git_dir().as_path();
+    ["shallow", "info/grafts", "refs/replace", "packed-refs"]
+        .iter()
+        .map(|name| {
+            std::fs::metadata(common.join(name))
+                .ok()
+                .and_then(|metadata| Some((metadata.len(), metadata.modified().ok()?)))
+        })
+        .collect()
 }
 
 fn query_refs(

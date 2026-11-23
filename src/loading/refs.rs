@@ -1,13 +1,15 @@
 //! Reference snapshot loading, including remote configuration, stashes and linked worktrees.
 use super::CommandExecutor;
 use crate::activity::{ActivityRecord, ActivityStatus};
+use crate::peel::{parse_peeled, peel_input, PEEL_FORMAT};
 use crate::process::{GitProcessCommand, PrivateActivityBytes, ProcessArgument};
 use crate::refs::{
-    parse_branch_upstreams, parse_references, parse_remotes, parse_stashes, parse_worktrees,
-    BranchUpstream, LinkedWorktree, Remote, RepositoryReference, StashEntry, REF_FORMAT,
+    parse_branch_upstreams, parse_reference_list, parse_remotes, parse_stashes, parse_worktrees,
+    BranchUpstream, LinkedWorktree, Remote, RepositoryReference, StashEntry, REF_LIST_FORMAT,
     UPSTREAM_REMOTE_FORMAT,
 };
 use crate::types::{RefId, WorktreeId};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::Path;
 const OUTPUT_LIMIT: usize = 32 * 1024 * 1024;
@@ -173,7 +175,7 @@ impl ReferenceLoader {
             [
                 ProcessArgument::visible("for-each-ref"),
                 ProcessArgument::visible("--sort=refname"),
-                ProcessArgument::visible(format!("--format={REF_FORMAT}")),
+                ProcessArgument::visible(format!("--format={REF_LIST_FORMAT}")),
             ],
             executor,
         );
@@ -209,6 +211,58 @@ impl ReferenceLoader {
 }
 
 impl ReferenceLoader {
+    /// Peels every target in one `cat-file --batch-check`: annotated tags get the object they
+    /// name, and references whose object the repository does not have are dropped.
+    fn peel_references(
+        &self,
+        directory: &Path,
+        references: &mut Vec<RepositoryReference>,
+        executor: &mut dyn CommandExecutor,
+        activities: &mut Vec<ActivityRecord>,
+    ) -> Result<(), RefsFailureKind> {
+        if references.is_empty() {
+            return Ok(());
+        }
+        let mut targets = references
+            .iter()
+            .map(|reference| reference.target.clone())
+            .collect::<Vec<_>>();
+        targets.sort();
+        targets.dedup();
+        let run = executor
+            .execute(
+                self.command(
+                    directory,
+                    [
+                        ProcessArgument::visible("cat-file"),
+                        ProcessArgument::visible(format!("--batch-check={PEEL_FORMAT}")),
+                    ],
+                )
+                .stdin_bytes(peel_input(&targets)),
+            )
+            .activity;
+        let peeled = failure_for(&run).map_or_else(
+            || {
+                parse_peeled(targets.len(), &run.stdout.bytes)
+                    .map_err(|_| RefsFailureKind::InvalidOutput)
+            },
+            Err,
+        );
+        activities.push(run);
+        let peeled = peeled?;
+        let by_target = targets.into_iter().zip(peeled).collect::<HashMap<_, _>>();
+        references.retain_mut(|reference| match by_target.get(&reference.target) {
+            Some(Some(peeled)) => {
+                if peeled.object != reference.target {
+                    reference.peeled_target = Some(peeled.object.clone());
+                }
+                true
+            }
+            _ => false,
+        });
+        Ok(())
+    }
+
     fn append_reference_sections(
         &self,
         request: &RefsRequest,
@@ -218,10 +272,19 @@ impl ReferenceLoader {
         activities: &mut Vec<ActivityRecord>,
         failure: &mut Option<RefsFailureKind>,
     ) {
-        let Ok(references) = parse_references(&refs.stdout.bytes) else {
+        let Ok(mut references) = parse_reference_list(&refs.stdout.bytes) else {
             *failure = Some(RefsFailureKind::InvalidOutput);
             return;
         };
+        if let Err(kind) = self.peel_references(
+            request.worktree.worktree_root().as_path(),
+            &mut references,
+            executor,
+            activities,
+        ) {
+            *failure = Some(kind);
+            return;
+        }
         let head_symbolic = if request.include_secondary {
             let head = self.run(
                 request.worktree.worktree_root().as_path(),

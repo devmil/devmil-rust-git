@@ -281,6 +281,11 @@ mod model_tests {
 
 /// NUL-separated format consumed by [`parse_references`].
 pub const REF_FORMAT: &str = "%(refname)%00%(objectname)%00%(*objectname)%00%(symref)%00%(upstream)%00%(upstream:track)%00%(HEAD)%00";
+/// [`REF_FORMAT`] without the peeled target, which makes Git read every object and fail
+/// for the whole listing on one missing object. Consumed by [`parse_reference_list`]; peel
+/// the targets with [`crate::peel`].
+pub const REF_LIST_FORMAT: &str =
+    "%(refname)%00%(objectname)%00%(symref)%00%(upstream)%00%(upstream:track)%00%(HEAD)%00";
 /// NUL-separated format consumed by [`parse_stashes`].
 pub const STASH_FORMAT: &str = "%H%x00%gd%x00%gs%x00";
 
@@ -372,6 +377,44 @@ pub fn parse_references(bytes: &[u8]) -> Result<Vec<RepositoryReference>, RefsPa
             symbolic_target,
             upstream,
             is_head: record[6] == b"*",
+        });
+    }
+    Ok(rows)
+}
+
+/// Parses complete `for-each-ref` output using [`REF_LIST_FORMAT`]. Every row's
+/// `peeled_target` is `None` until the targets are peeled.
+///
+/// # Errors
+/// Returns [`RefsParseError`] for malformed records.
+pub fn parse_reference_list(bytes: &[u8]) -> Result<Vec<RepositoryReference>, RefsParseError> {
+    let fields = exact_nul_fields(bytes, 6)?;
+    let mut rows = Vec::new();
+    for record in fields.chunks_exact(6) {
+        let name = trim_record_prefix(record[0]);
+        if name.is_empty() {
+            continue;
+        }
+        let id = RefId::from_bytes(name.to_vec()).map_err(|_| RefsParseError)?;
+        let target = ObjectId::parse(str::from_utf8(record[1]).map_err(|_| RefsParseError)?)
+            .map_err(|_| RefsParseError)?;
+        let symbolic_target = parse_optional_ref(record[2])?;
+        let upstream_ref = parse_optional_ref(record[3])?;
+        let (ahead, behind, gone) = parse_tracking(record[4])?;
+        let upstream = upstream_ref.map(|reference| UpstreamStatus {
+            reference,
+            ahead,
+            behind,
+            gone,
+        });
+        rows.push(RepositoryReference {
+            kind: RepositoryReference::classify(&id),
+            id,
+            target,
+            peeled_target: None,
+            symbolic_target,
+            upstream,
+            is_head: record[5] == b"*",
         });
     }
     Ok(rows)

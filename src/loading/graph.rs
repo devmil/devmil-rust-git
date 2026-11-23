@@ -7,6 +7,7 @@ use crate::history::{
     batch_metadata_requests, parse_object_id, parse_rev_list_record, GraphParseError,
     RevListParser, RevListRecord,
 };
+use crate::peel::{parse_peeled, peel_input, PeeledKind, PEEL_FORMAT};
 use crate::process::{GitProcessCommand, ProcessArgument};
 use crate::refs::STANDARD_REFERENCE_PATTERNS;
 use crate::types::{ObjectId, RefId, WorktreeId};
@@ -627,18 +628,60 @@ impl GraphSession<'_> {
         if let Some(patterns) = patterns {
             let mut arguments = vec![
                 ProcessArgument::visible("for-each-ref"),
-                // An annotated tag names a tag object. Its peeled commit is the
-                // row the reference belongs to.
-                ProcessArgument::visible("--format=%(refname)%00%(objectname)%00%(*objectname)"),
+                // Names and targets only: peeling here (`%(*objectname)`) reads every object,
+                // and one reference to a missing object fails the whole listing.
+                ProcessArgument::visible("--format=%(refname)%00%(objectname)"),
             ];
             // Without patterns Git lists every reference.
             arguments.extend(patterns.iter().copied().map(ProcessArgument::visible));
             let refs = self.run(Some(directory), arguments, SMALL_OUTPUT_LIMIT, cancellation);
             activities.push(refs.record.id);
             successful(&refs)?;
-            for (object, reference) in parse_frozen_reference_tips(&refs.stdout)? {
-                tips.push(object.clone());
-                named_tips.push((object, reference));
+            let listed = parse_frozen_reference_tips(&refs.stdout)?;
+            // An annotated tag names a tag object; its peeled commit is the row the reference
+            // belongs to. References to missing or non-commit objects have no row.
+            let mut targets = listed
+                .iter()
+                .map(|(object, _)| object.clone())
+                .collect::<Vec<_>>();
+            targets.sort();
+            targets.dedup();
+            let peeled = if targets.is_empty() {
+                Vec::new()
+            } else {
+                let run = self.run_with_stdin(
+                    directory,
+                    [
+                        ProcessArgument::visible("cat-file"),
+                        ProcessArgument::visible(format!("--batch-check={PEEL_FORMAT}")),
+                    ],
+                    peel_input(&targets),
+                    SMALL_OUTPUT_LIMIT,
+                    cancellation,
+                );
+                activities.push(run.record.id);
+                successful(&run)?;
+                parse_peeled(targets.len(), &run.stdout).map_err(|_| {
+                    GraphLoadError::Failed(GraphQueryFailure::public(
+                        GraphQueryFailureKind::MalformedOutput,
+                        "Git returned malformed reference objects",
+                    ))
+                })?
+            };
+            let commits = targets
+                .into_iter()
+                .zip(peeled)
+                .filter_map(|(target, peeled)| {
+                    peeled
+                        .filter(|peeled| peeled.kind == PeeledKind::Commit)
+                        .map(|peeled| (target, peeled.object))
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+            for (object, reference) in listed {
+                if let Some(commit) = commits.get(&object) {
+                    tips.push(commit.clone());
+                    named_tips.push((commit.clone(), reference));
+                }
             }
         }
         let mut seen = std::collections::HashSet::with_capacity(tips.len());
