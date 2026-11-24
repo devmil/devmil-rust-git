@@ -30,6 +30,7 @@ pub mod loading;
 pub mod merge;
 pub mod model;
 pub mod native_bytes;
+pub mod peel;
 pub mod probes;
 pub mod process;
 pub mod rebase;

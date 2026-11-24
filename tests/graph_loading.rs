@@ -103,9 +103,18 @@ fn topology_is_lazy_and_metadata_uses_one_preflight_and_one_content_batch() {
             .count(),
         1
     );
-    assert!(!commands.iter().any(|args| args
-        .first()
-        .is_some_and(|arg| arg == "cat-file" || arg == "--version")));
+    // Reference targets are peeled in one batch check; object contents are not read.
+    assert_eq!(
+        commands
+            .iter()
+            .filter(|args| args.first().is_some_and(|arg| arg == "cat-file"))
+            .map(|args| args[1].as_str())
+            .collect::<Vec<_>>(),
+        ["--batch-check=%(objectname) %(objecttype)"]
+    );
+    assert!(!commands
+        .iter()
+        .any(|args| args.first().is_some_and(|arg| arg == "--version")));
     commands.clear();
     let ids = topology
         .rows

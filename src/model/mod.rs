@@ -238,6 +238,7 @@ struct Shared {
     state: Mutex<State>,
     changed: Condvar,
     cancel: AtomicBool,
+    watcher_notified: AtomicBool,
     options: RepositoryOptions,
 }
 
@@ -326,6 +327,7 @@ impl Repository {
                 }),
                 changed: Condvar::new(),
                 cancel: AtomicBool::new(false),
+                watcher_notified: AtomicBool::new(false),
                 options,
             }),
         })
