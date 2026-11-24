@@ -83,6 +83,7 @@ pub(super) fn run(path: &std::path::Path, shared: &Arc<Shared>) {
                                     let mut registration = WatchRegistration::default();
                                     let mut snapshot = (*lock(&shared.state).snapshot).clone();
                                     registration.register(&repository, &shared, &mut snapshot);
+                                    shared.changed.notify_all();
                                     (registration, snapshot.watch_error)
                                 }));
                             }
@@ -209,6 +210,7 @@ pub(super) fn run(path: &std::path::Path, shared: &Arc<Shared>) {
             }
         }
         if let Some(active) = watcher.active.as_mut() {
+            shared.watcher_notified.swap(false, Ordering::AcqRel);
             match active.wait(Duration::ZERO) {
                 Ok(batch) => {
                     // A refresh requested in this pass rescans everything the lost events
@@ -369,6 +371,28 @@ pub(super) fn run(path: &std::path::Path, shared: &Arc<Shared>) {
             || refresh
                 .as_ref()
                 .is_some_and(RefreshCoordinator::has_pending);
+        let mut wait_timeout: Option<Duration> = None;
+        let mut clamp = |duration: Duration| {
+            wait_timeout = Some(match wait_timeout {
+                Some(current) => current.min(duration),
+                None => duration,
+            });
+        };
+        if refreshing.is_some() || opening_watcher.is_some() || discovering.is_some() {
+            clamp(Duration::from_millis(25));
+        }
+        if let Some(remaining) = refresh
+            .as_ref()
+            .and_then(|coordinator| coordinator.next_due_in(millis(started.elapsed())))
+        {
+            clamp(remaining);
+        }
+        if let Some(retry_at) = watcher.retry_at {
+            clamp(retry_at.saturating_duration_since(Instant::now()));
+        }
+        if watcher.active.is_some() && !watcher.event_driven {
+            clamp(Duration::from_millis(25));
+        }
         let mut state = lock(&shared.state);
         if state.worker_busy != busy {
             state.worker_busy = busy;
@@ -376,15 +400,28 @@ pub(super) fn run(path: &std::path::Path, shared: &Arc<Shared>) {
         }
         if !state.load_pending
             && !state.refresh_pending
+            && !shared.watcher_notified.load(Ordering::Acquire)
             && (!reads::has_pending(&state) || !processed)
             && !shared.cancel.load(Ordering::Acquire)
         {
-            drop(
-                shared
-                    .changed
-                    .wait_timeout(state, Duration::from_millis(25))
-                    .unwrap_or_else(std::sync::PoisonError::into_inner),
-            );
+            match wait_timeout {
+                Some(timeout) => {
+                    drop(
+                        shared
+                            .changed
+                            .wait_timeout(state, timeout)
+                            .unwrap_or_else(std::sync::PoisonError::into_inner),
+                    );
+                }
+                None => {
+                    drop(
+                        shared
+                            .changed
+                            .wait(state)
+                            .unwrap_or_else(std::sync::PoisonError::into_inner),
+                    );
+                }
+            }
         }
     }
     if let Some(refreshing) = refreshing {
@@ -809,12 +846,24 @@ fn current_head(branch: &crate::status::BranchStatus) -> Option<crate::types::He
 #[derive(Default)]
 struct WatchRegistration {
     active: Option<Box<dyn RepositoryWatcherPort>>,
+    event_driven: bool,
     plan: Option<RepositoryWatchPlan>,
     retry_at: Option<Instant>,
     failed_attempts: u32,
     polling_required: bool,
 }
 impl WatchRegistration {
+    fn install_active(&mut self, mut active: Box<dyn RepositoryWatcherPort>, shared: &Arc<Shared>) {
+        let wakeup_shared = Arc::clone(shared);
+        self.event_driven = active.set_wakeup(Arc::new(move || {
+            wakeup_shared
+                .watcher_notified
+                .store(true, Ordering::Release);
+            let _state = lock(&wakeup_shared.state);
+            wakeup_shared.changed.notify_all();
+        }));
+        self.active = Some(active);
+    }
     fn retry(&mut self) {
         let delay = Duration::from_secs(1_u64 << self.failed_attempts.min(5));
         self.failed_attempts = self.failed_attempts.saturating_add(1);
@@ -826,7 +875,11 @@ impl WatchRegistration {
     }
     /// Starts a recursive watch without exclusions before the first scan. Returns `false` when
     /// the backend would walk the worktree, which keeps registration off the opening path.
-    fn register_before_scan(&mut self, repository: &DiscoveredRepository, shared: &Shared) -> bool {
+    fn register_before_scan(
+        &mut self,
+        repository: &DiscoveredRepository,
+        shared: &Arc<Shared>,
+    ) -> bool {
         let native = NativeWatcherFactory::native_primary();
         let factory: &dyn PlatformWatcherPort =
             shared.options.watcher_factory.as_deref().unwrap_or(&native);
@@ -836,7 +889,7 @@ impl WatchRegistration {
         let plan = watch_plan(repository, Vec::new(), &shared.options.temporary_paths);
         match factory.watch(&plan) {
             Ok(active) => {
-                self.active = Some(active);
+                self.install_active(active, shared);
                 self.plan = Some(plan);
                 self.retry_at = None;
                 true
@@ -861,7 +914,7 @@ impl WatchRegistration {
     fn register(
         &mut self,
         repository: &DiscoveredRepository,
-        shared: &Shared,
+        shared: &Arc<Shared>,
         snapshot: &mut RepositorySnapshot,
     ) {
         if shared.cancel.load(Ordering::Acquire) {
@@ -884,7 +937,7 @@ impl WatchRegistration {
     fn register_plan(
         &mut self,
         plan: RepositoryWatchPlan,
-        shared: &Shared,
+        shared: &Arc<Shared>,
         snapshot: &mut RepositorySnapshot,
     ) {
         if shared.cancel.load(Ordering::Acquire) {
@@ -912,7 +965,7 @@ impl WatchRegistration {
         };
         match result {
             Ok(active) => {
-                self.active = Some(active);
+                self.install_active(active, shared);
                 self.plan = Some(plan);
                 self.retry_at = None;
             }

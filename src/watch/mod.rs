@@ -228,6 +228,12 @@ pub trait RepositoryWatcherPort: Send {
     fn update_exclusions(&mut self, _excluded_worktree_roots: &[PathBuf]) -> bool {
         false
     }
+
+    /// Registers a callback invoked from the backend when new events are queued.
+    /// Returns `true` when the watcher pushes wakeups so callers can block without polling.
+    fn set_wakeup(&mut self, _wakeup: std::sync::Arc<dyn Fn() + Send + Sync>) -> bool {
+        false
+    }
 }
 
 pub trait PlatformWatcherPort: Send + Sync {
@@ -440,6 +446,19 @@ impl RefreshCoordinator {
             RefreshReason::Filesystem
         };
         Some(self.issue(reason, self.pending_overflow))
+    }
+
+    /// Time remaining until the pending coalesced batch becomes due, or `None` when idle.
+    #[must_use]
+    pub fn next_due_in(&self, now_ms: u64) -> Option<Duration> {
+        let last_event = self.last_event_ms?;
+        if self.pending_overflow {
+            return Some(Duration::ZERO);
+        }
+        let elapsed = now_ms.saturating_sub(last_event);
+        Some(Duration::from_millis(
+            self.coalesce_ms.saturating_sub(elapsed),
+        ))
     }
 
     /// Creates an immediate complete refresh intent and folds any pending burst into it.

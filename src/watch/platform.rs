@@ -15,7 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -119,10 +119,13 @@ fn native_recursive() -> bool {
     )
 }
 
+type NativeWakeup = Arc<dyn Fn() + Send + Sync>;
+
 pub struct NativeRepositoryWatcher {
     watcher: Option<RecommendedWatcher>,
     receiver: Receiver<NativeMessage>,
     overflow: Arc<AtomicBool>,
+    wakeup: Arc<Mutex<Option<NativeWakeup>>>,
     targets: Vec<WatchTarget>,
     // Shared with the backend callback so exclusions can change without a registration gap.
     excluded_worktree_roots: Arc<RwLock<Vec<PathBuf>>>,
@@ -142,6 +145,8 @@ impl NativeRepositoryWatcher {
         let (sender, receiver) = mpsc::sync_channel(channel_capacity);
         let overflow = Arc::new(AtomicBool::new(false));
         let callback_overflow = Arc::clone(&overflow);
+        let wakeup: Arc<Mutex<Option<NativeWakeup>>> = Arc::new(Mutex::new(None));
+        let callback_wakeup = Arc::clone(&wakeup);
         let callback_targets = targets.clone();
         let excluded_worktree_roots = Arc::new(RwLock::new(excluded_worktree_roots));
         let callback_exclusions = Arc::clone(&excluded_worktree_roots);
@@ -150,6 +155,7 @@ impl NativeRepositoryWatcher {
             send_native_message(
                 &sender,
                 &callback_overflow,
+                &callback_wakeup,
                 &callback_targets,
                 &callback_exclusions
                     .read()
@@ -163,6 +169,7 @@ impl NativeRepositoryWatcher {
             watcher: Some(watcher),
             receiver,
             overflow,
+            wakeup,
             targets,
             excluded_worktree_roots,
             watched: BTreeMap::new(),
@@ -258,6 +265,13 @@ impl NativeRepositoryWatcher {
 }
 
 impl RepositoryWatcherPort for NativeRepositoryWatcher {
+    fn set_wakeup(&mut self, wakeup: NativeWakeup) -> bool {
+        *self.wakeup.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&wakeup));
+        // Notify once in case events arrived between watch creation and wakeup registration.
+        wakeup();
+        true
+    }
+
     fn update_exclusions(&mut self, excluded_worktree_roots: &[PathBuf]) -> bool {
         // Explicit-watch backends skip ignored directories while registering, so only a
         // recursive registration is independent of the exclusions.
@@ -329,6 +343,7 @@ impl Drop for NativeRepositoryWatcher {
 fn send_native_message(
     sender: &SyncSender<NativeMessage>,
     overflow: &AtomicBool,
+    wakeup: &Mutex<Option<NativeWakeup>>,
     targets: &[WatchTarget],
     excluded_worktree_roots: &[PathBuf],
     temporary_paths: &TemporaryPathRules,
@@ -364,9 +379,22 @@ fn send_native_message(
         }
         Ok(_) | Err(_) => {}
     }
-    match sender.try_send(message) {
-        Err(mpsc::TrySendError::Full(_)) => overflow.store(true, Ordering::Release),
-        Ok(()) | Err(mpsc::TrySendError::Disconnected(_)) => {}
+    let notify_caller = match sender.try_send(message) {
+        Ok(()) => true,
+        Err(mpsc::TrySendError::Full(_)) => {
+            overflow.store(true, Ordering::Release);
+            true
+        }
+        Err(mpsc::TrySendError::Disconnected(_)) => false,
+    };
+    if notify_caller {
+        let callback = wakeup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(callback) = callback {
+            callback();
+        }
     }
 }
 
@@ -938,9 +966,11 @@ mod p02_native_watch_tests {
         let (sender, receiver) = mpsc::sync_channel(1);
         drop(receiver);
         let overflow = AtomicBool::new(false);
+        let wakeup = Mutex::new(None);
         send_native_message(
             &sender,
             &overflow,
+            &wakeup,
             &[],
             &[],
             &TemporaryPathRules::default(),
@@ -1001,11 +1031,17 @@ mod p02_native_watch_tests {
 
         let (sender, receiver) = mpsc::sync_channel(1);
         let overflow = AtomicBool::new(false);
+        let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let wakes_cb = Arc::clone(&wakes);
+        let wakeup: Mutex<Option<NativeWakeup>> = Mutex::new(Some(Arc::new(move || {
+            wakes_cb.fetch_add(1, AtomicOrdering::Relaxed);
+        })));
         let access = Event::new(EventKind::Access(notify::event::AccessKind::Any))
             .add_path(PathBuf::from("/repo/src/main.rs"));
         send_native_message(
             &sender,
             &overflow,
+            &wakeup,
             &targets,
             &[],
             &TemporaryPathRules::default(),
@@ -1016,22 +1052,26 @@ mod p02_native_watch_tests {
         send_native_message(
             &sender,
             &overflow,
+            &wakeup,
             &targets,
             &[],
             &TemporaryPathRules::default(),
             Ok(object),
         );
+        assert_eq!(wakes.load(AtomicOrdering::Relaxed), 0);
         let source = Event::new(EventKind::Modify(ModifyKind::Any))
             .add_path(PathBuf::from("/repo/src/main.rs"));
         send_native_message(
             &sender,
             &overflow,
+            &wakeup,
             &targets,
             &[],
             &TemporaryPathRules::default(),
             Ok(source),
         );
 
+        assert_eq!(wakes.load(AtomicOrdering::Relaxed), 1);
         assert!(receiver.try_recv().is_ok());
         assert!(!overflow.load(Ordering::Acquire));
     }
@@ -1046,6 +1086,7 @@ mod p02_native_watch_tests {
         let excluded_worktree_roots = vec![PathBuf::from("/repo/target")];
         let (sender, receiver) = mpsc::sync_channel(1);
         let overflow = AtomicBool::new(false);
+        let wakeup = Mutex::new(None);
 
         for number in 0..500 {
             let ignored = Event::new(EventKind::Create(notify::event::CreateKind::File))
@@ -1053,6 +1094,7 @@ mod p02_native_watch_tests {
             send_native_message(
                 &sender,
                 &overflow,
+                &wakeup,
                 &targets,
                 &excluded_worktree_roots,
                 &TemporaryPathRules::default(),
@@ -1064,6 +1106,7 @@ mod p02_native_watch_tests {
         send_native_message(
             &sender,
             &overflow,
+            &wakeup,
             &targets,
             &excluded_worktree_roots,
             &TemporaryPathRules::default(),
